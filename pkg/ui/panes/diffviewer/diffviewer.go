@@ -115,7 +115,7 @@ func New(sideBySide bool) Model {
 				SelectionPrefix: lipgloss.NewStyle().Foreground(lipgloss.Blue).Render("▐"),
 				SelectedItemStyle: lipgloss.NewStyle().
 					Background(common.Colors[common.Selected]).
-					Foreground(lipgloss.BrightWhite),
+					Foreground(common.Colors[common.SelectedFg]),
 				FooterStyle: lipgloss.NewStyle().
 					BorderForeground(lipgloss.BrightBlack).
 					Background(lipgloss.BrightBlack).
@@ -134,10 +134,10 @@ func New(sideBySide bool) Model {
 
 	filterableViewportStyles := filterableviewport.DefaultStyles()
 	filterableViewportStyles.Filter.Focused.TextInput.Text = lipgloss.NewStyle().
-		Foreground(lipgloss.BrightWhite)
+		Foreground(common.Colors[common.SelectedFg])
 	filterableViewportStyles.Filter.Unfocused.TextInput.Text = lipgloss.NewStyle().
-		Foreground(lipgloss.White)
-	filterableViewportStyles.Filter.Empty = lipgloss.NewStyle().Foreground(lipgloss.White)
+		Foreground(common.Colors[common.MutedFg])
+	filterableViewportStyles.Filter.Empty = lipgloss.NewStyle().Foreground(common.Colors[common.MutedFg])
 	filterableViewportStyles.MatchesCount.Matches = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#FF9E65"))
 	filterableViewportStyles.Match.Focused = lipgloss.NewStyle().

@@ -954,8 +954,8 @@ func (m mainModel) renderScrollbar() string {
 
 func (m mainModel) resultsView() string {
 	sb := strings.Builder{}
-	baseStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#F7F7F7"))
-	dirStyle := lipgloss.NewStyle().Bold(false).Foreground(lipgloss.Color("#B8B8B8"))
+	baseStyle := lipgloss.NewStyle().Foreground(common.Colors[common.SelectedFg])
+	dirStyle := lipgloss.NewStyle().Bold(false).Foreground(common.Colors[common.MutedFg])
 	for i, f := range m.filtered {
 		icon := neo.ByPath(f)
 		if icon == nil {
@@ -972,7 +972,7 @@ func (m mainModel) resultsView() string {
 			dir = ""
 		}
 		if i == m.resultsCursor {
-			bg := lipgloss.NewStyle().Background(lipgloss.Color("#1b1b33"))
+			bg := lipgloss.NewStyle().Background(common.Colors[common.Selected])
 			fName := lipgloss.NewStyle().
 				Bold(true).
 				Render(bg.Render(base)) +
