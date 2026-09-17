@@ -552,18 +552,23 @@ func (m mainModel) View() tea.View {
 
 	view.KeyboardEnhancements.ReportEventTypes = true
 	// Determine colors based on active panel.
-	sidebarFocused := m.sidebarFocused()
-	leftColor := common.Colors[common.BorderMuted]
-	rightColor := common.Colors[common.BorderMuted]
+	// The focused pane gets a heavy rule above it; the divider between the two
+	// is a shared edge, part of both panes' outlines, so it always reads as
+	// active. Which pane has focus is carried by which half of the rule is
+	// heavy, and by the junction glyph joining it to the divider.
+	muted := common.Colors[common.BorderMuted]
+	focus := common.Colors[common.BorderFocus]
+	leftColor, rightColor := muted, muted
 	leftRule, rightRule := "─", "─"
-	divider, junction := "│", "┬"
-	if sidebarFocused {
-		leftColor = common.Colors[common.BorderFocus]
-		leftRule, divider, junction = "━", "┃", "┱"
+	junction := "┲"
+	if m.sidebarFocused() {
+		leftColor = focus
+		leftRule, junction = "━", "┱"
 	} else {
-		rightColor = common.Colors[common.BorderFocus]
-		rightRule, junction = "━", "┮"
+		rightColor = focus
+		rightRule = "━"
 	}
+	dividerColor, divider := focus, "┃"
 
 	// Build T-shaped separator line.
 	separator := ""
@@ -574,7 +579,7 @@ func (m mainModel) View() tea.View {
 			leftLine := lipgloss.NewStyle().
 				Foreground(leftColor).
 				Render(strings.Repeat(leftRule, sidebarW))
-			junctionStr := lipgloss.NewStyle().Foreground(leftColor).Render(junction)
+			junctionStr := lipgloss.NewStyle().Foreground(dividerColor).Render(junction)
 			rightLine := lipgloss.NewStyle().
 				Foreground(rightColor).
 				Render(strings.Repeat(rightRule, rightW))
@@ -608,7 +613,7 @@ func (m mainModel) View() tea.View {
 		sidebarBorder.Right = divider
 		sidebar = lipgloss.NewStyle().
 			Border(sidebarBorder, false, true, false, false).
-			BorderForeground(leftColor).Render(content)
+			BorderForeground(dividerColor).Render(content)
 	} else {
 		// Show a thin grab line when sidebar is hidden.
 		// Width(0) means only the border is rendered (1 char).
