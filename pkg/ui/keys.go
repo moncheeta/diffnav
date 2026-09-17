@@ -59,12 +59,12 @@ var keys = &KeyMap{
 		key.WithHelp("↓/j", "next file"),
 	),
 	Bottom: key.NewBinding(
-		key.WithKeys("G"),
-		key.WithHelp("G", "bottom"),
+		key.WithKeys("G", "end"),
+		key.WithHelp("G/end", "bottom"),
 	),
 	Top: key.NewBinding(
-		key.WithKeys("g"),
-		key.WithHelp("g", "top"),
+		key.WithKeys("g", "home"),
+		key.WithHelp("g/home", "top"),
 	),
 	NextFile: key.NewBinding(
 		key.WithKeys("n"),
