@@ -289,6 +289,14 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sideBySide = !m.sideBySide
 			cmd = m.diffViewer.SetSideBySide(m.sideBySide)
 			cmds = append(cmds, cmd)
+		case m.activePanel == FileTreePanel && key.Matches(msg, keys.ToggleNode):
+			// A file node has nothing to expand, so enter would be a no-op.
+			// Move focus to the diff, which already shows the selected file.
+			if m.fileTree.IsCurrNodeFile() {
+				m.activePanel = DiffViewerPanel
+			} else {
+				m.fileTree.Update(msg)
+			}
 		case key.Matches(msg, keys.SwitchPanel):
 			if m.isShowingFileTree {
 				if m.activePanel == FileTreePanel {
@@ -531,6 +539,12 @@ func (m mainModel) searchUpdate(msg tea.Msg) (mainModel, []tea.Cmd) {
 	return m, cmds
 }
 
+// sidebarFocused reports whether keyboard focus is in the sidebar. The file
+// tree and the file search list share a border, so both count as focused.
+func (m mainModel) sidebarFocused() bool {
+	return m.searchingFiles || m.activePanel == FileTreePanel
+}
+
 func (m mainModel) View() tea.View {
 	var view tea.View
 	view.AltScreen = true
@@ -538,12 +552,17 @@ func (m mainModel) View() tea.View {
 
 	view.KeyboardEnhancements.ReportEventTypes = true
 	// Determine colors based on active panel.
-	leftColor := lipgloss.Color("8")
-	rightColor := lipgloss.Color("8")
-	if m.activePanel == FileTreePanel && !m.searchingFiles {
-		leftColor = lipgloss.Color("4")
-	} else if m.activePanel == DiffViewerPanel {
-		rightColor = lipgloss.Color("4")
+	sidebarFocused := m.sidebarFocused()
+	leftColor := common.Colors[common.BorderMuted]
+	rightColor := common.Colors[common.BorderMuted]
+	leftRule, rightRule := "─", "─"
+	divider, junction := "│", "┬"
+	if sidebarFocused {
+		leftColor = common.Colors[common.BorderFocus]
+		leftRule, divider, junction = "━", "┃", "┱"
+	} else {
+		rightColor = common.Colors[common.BorderFocus]
+		rightRule, junction = "━", "┮"
 	}
 
 	// Build T-shaped separator line.
@@ -554,16 +573,16 @@ func (m mainModel) View() tea.View {
 			rightW := max(m.width-sidebarW, 0)
 			leftLine := lipgloss.NewStyle().
 				Foreground(leftColor).
-				Render(strings.Repeat("─", sidebarW))
-			junction := lipgloss.NewStyle().Foreground(leftColor).Render("┬")
+				Render(strings.Repeat(leftRule, sidebarW))
+			junctionStr := lipgloss.NewStyle().Foreground(leftColor).Render(junction)
 			rightLine := lipgloss.NewStyle().
 				Foreground(rightColor).
-				Render(strings.Repeat("─", rightW))
-			separator = leftLine + junction + rightLine
+				Render(strings.Repeat(rightRule, rightW))
+			separator = leftLine + junctionStr + rightLine
 		} else {
 			separator = lipgloss.NewStyle().
 				Foreground(rightColor).
-				Render(strings.Repeat("─", m.width))
+				Render(strings.Repeat(rightRule, m.width))
 		}
 	}
 
@@ -571,7 +590,7 @@ func (m mainModel) View() tea.View {
 	if m.isSidebarVisible() {
 		searchBox := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("8")).
+			BorderForeground(common.Colors[common.BorderMuted]).
 			Width(m.sidebarWidth()).
 			Render(m.filesSearch.View())
 		searchBox = zone.Mark(zoneSearchBox, searchBox)
@@ -585,8 +604,10 @@ func (m mainModel) View() tea.View {
 		content = lipgloss.NewStyle().
 			Render(lipgloss.JoinVertical(lipgloss.Left, searchBox, content))
 
+		sidebarBorder := lipgloss.NormalBorder()
+		sidebarBorder.Right = divider
 		sidebar = lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder(), false, true, false, false).
+			Border(sidebarBorder, false, true, false, false).
 			BorderForeground(leftColor).Render(content)
 	} else {
 		// Show a thin grab line when sidebar is hidden.
@@ -595,7 +616,7 @@ func (m mainModel) View() tea.View {
 			Width(0).
 			Height(m.mainContentHeight()-1).
 			Border(lipgloss.NormalBorder(), false, true, false, false).
-			BorderForeground(lipgloss.Color("8")).
+			BorderForeground(common.Colors[common.BorderMuted]).
 			Render("")
 		sidebar = grabLine
 	}
