@@ -235,6 +235,12 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case m.messageOpen && key.Matches(msg, keys.CtrlU):
 			m.messageVp.ScrollUp(m.messageVp.Height() / 2)
 			return m, tea.Batch(cmds...)
+		case m.messageOpen && key.Matches(msg, keys.PageDown):
+			m.messageVp.ScrollDown(m.messageVp.Height())
+			return m, tea.Batch(cmds...)
+		case m.messageOpen && key.Matches(msg, keys.PageUp):
+			m.messageVp.ScrollUp(m.messageVp.Height())
+			return m, tea.Batch(cmds...)
 		case m.helpOpen || m.messageOpen:
 			// Block all other keys while an overlay is open
 			return m, tea.Batch(cmds...)
@@ -358,7 +364,8 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, keys.CtrlY):
 			m.diffViewer.ScrollUp(1)
 
-		case key.Matches(msg, keys.CtrlD, keys.CtrlU, keys.CtrlE, keys.CtrlY):
+		case key.Matches(msg, keys.CtrlD, keys.CtrlU, keys.CtrlE, keys.CtrlY,
+			keys.PageDown, keys.PageUp):
 			m.diffViewer, cmd = m.diffViewer.Update(msg)
 			cmds = append(cmds, cmd)
 		default:

@@ -14,6 +14,8 @@ type KeyMap struct {
 	PrevFile              key.Binding
 	CtrlD                 key.Binding
 	CtrlU                 key.Binding
+	PageDown              key.Binding
+	PageUp                key.Binding
 	CtrlE                 key.Binding
 	CtrlY                 key.Binding
 	ScrollLeft            key.Binding
@@ -79,6 +81,14 @@ var keys = &KeyMap{
 	CtrlU: key.NewBinding(
 		key.WithKeys("ctrl+u"),
 		key.WithHelp("ctrl+u", "diff half page up"),
+	),
+	PageDown: key.NewBinding(
+		key.WithKeys("pgdown"),
+		key.WithHelp("pgdn", "diff page down"),
+	),
+	PageUp: key.NewBinding(
+		key.WithKeys("pgup"),
+		key.WithHelp("pgup", "diff page up"),
 	),
 	CtrlE: key.NewBinding(
 		key.WithKeys("ctrl+e"),
@@ -169,6 +179,8 @@ func KeyGroups() [][]key.Binding {
 		keys.PrevFile,
 		keys.CtrlD,
 		keys.CtrlU,
+		keys.PageDown,
+		keys.PageUp,
 		keys.ScrollLeft,
 		keys.ScrollRight,
 	}, {

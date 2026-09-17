@@ -49,6 +49,14 @@ func (o diffLine) GetItem() item.Item {
 }
 
 var ViewportKeyMap = viewport.KeyMap{
+	PageDown: key.NewBinding(
+		key.WithKeys("pgdown"),
+		key.WithHelp("pgdn", "scroll page down"),
+	),
+	PageUp: key.NewBinding(
+		key.WithKeys("pgup"),
+		key.WithHelp("pgup", "scroll page up"),
+	),
 	HalfPageDown: key.NewBinding(
 		key.WithKeys("ctrl+d"),
 		key.WithHelp("ctrl+d", "scroll half page down"),
