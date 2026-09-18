@@ -36,7 +36,9 @@ const (
 	minResizeStep = 6
 	footerHeight  = 1
 	headerHeight  = 2
-	searchHeight  = 3
+	// messagePageOverlap mirrors the diff viewer's page overlap.
+	messagePageOverlap = 2
+	searchHeight       = 3
 
 	// Zone IDs for bubblezone click detection.
 	zoneSearchBox     = "searchbox"
@@ -236,10 +238,10 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.messageVp.ScrollUp(m.messageVp.Height() / 2)
 			return m, tea.Batch(cmds...)
 		case m.messageOpen && key.Matches(msg, keys.PageDown):
-			m.messageVp.ScrollDown(m.messageVp.Height())
+			m.messageVp.ScrollDown(max(1, m.messageVp.Height()-messagePageOverlap))
 			return m, tea.Batch(cmds...)
 		case m.messageOpen && key.Matches(msg, keys.PageUp):
-			m.messageVp.ScrollUp(m.messageVp.Height())
+			m.messageVp.ScrollUp(max(1, m.messageVp.Height()-messagePageOverlap))
 			return m, tea.Batch(cmds...)
 		case m.helpOpen || m.messageOpen:
 			// Block all other keys while an overlay is open
@@ -366,14 +368,19 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 			}
 
+		case key.Matches(msg, keys.PageDown):
+			m.diffViewer.ScrollDown(m.diffViewer.PageStep())
+
+		case key.Matches(msg, keys.PageUp):
+			m.diffViewer.ScrollUp(m.diffViewer.PageStep())
+
 		case key.Matches(msg, keys.CtrlE):
 			m.diffViewer.ScrollDown(1)
 
 		case key.Matches(msg, keys.CtrlY):
 			m.diffViewer.ScrollUp(1)
 
-		case key.Matches(msg, keys.CtrlD, keys.CtrlU, keys.CtrlE, keys.CtrlY,
-			keys.PageDown, keys.PageUp):
+		case key.Matches(msg, keys.CtrlD, keys.CtrlU, keys.CtrlE, keys.CtrlY):
 			m.diffViewer, cmd = m.diffViewer.Update(msg)
 			cmds = append(cmds, cmd)
 		default:

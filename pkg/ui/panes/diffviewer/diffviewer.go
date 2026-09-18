@@ -23,6 +23,13 @@ import (
 
 const dirHeaderHeight = 3
 
+// pageOverlap is how many lines stay on screen across a page jump, so there is
+// something to read against. The viewport's own paging keeps none.
+const pageOverlap = 2
+
+// viewportFooterLines is the progress line the viewport draws below the content.
+const viewportFooterLines = 1
+
 type cachedNode struct {
 	path      string
 	files     []*gitdiff.File
@@ -49,14 +56,9 @@ func (o diffLine) GetItem() item.Item {
 }
 
 var ViewportKeyMap = viewport.KeyMap{
-	PageDown: key.NewBinding(
-		key.WithKeys("pgdown"),
-		key.WithHelp("pgdn", "scroll page down"),
-	),
-	PageUp: key.NewBinding(
-		key.WithKeys("pgup"),
-		key.WithHelp("pgup", "scroll page up"),
-	),
+	// PageDown/PageUp are deliberately left unbound: the viewport pages a
+	// whole screen of content, leaving no overlap. The page keys are handled
+	// a level up so they can scroll PageStep instead.
 	HalfPageDown: key.NewBinding(
 		key.WithKeys("ctrl+d"),
 		key.WithHelp("ctrl+d", "scroll half page down"),
@@ -300,6 +302,22 @@ func (m *Model) diff() tea.Cmd {
 	}
 
 	return nil
+}
+
+// PageStep is how far the page keys scroll: a screen of content less a couple
+// of lines of overlap. Never less than one line.
+func (m Model) PageStep() int {
+	return max(1, m.contentLines()-pageOverlap)
+}
+
+// contentLines is the number of diff lines visible at once, which is the
+// viewport minus the header it was given and the footer it draws.
+func (m Model) contentLines() int {
+	header := 0
+	if h := m.headerView(); h != "" {
+		header = len(strings.Split(h, "\n"))
+	}
+	return m.fvp.GetHeight() - header - viewportFooterLines
 }
 
 func (m Model) headerView() string {

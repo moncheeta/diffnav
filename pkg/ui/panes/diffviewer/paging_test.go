@@ -2,6 +2,7 @@ package diffviewer
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -9,45 +10,71 @@ import (
 	"github.com/robinovitch61/viewport/viewport/item"
 )
 
-const testViewportHeight = 20
-
-func newPagingViewport(t *testing.T) *viewport.Model[diffLine] {
-	t.Helper()
-	vp := viewport.New(80, testViewportHeight, viewport.WithKeyMap[diffLine](ViewportKeyMap))
-	lines := make([]diffLine, 200)
+func testLines(n int) []diffLine {
+	lines := make([]diffLine, n)
 	for i := range lines {
 		lines[i] = diffLine{item: item.NewItem(fmt.Sprintf("line %03d", i))}
 	}
-	vp.SetObjects(lines)
-	return vp
+	return lines
 }
 
-func pressKey(t *testing.T, vp *viewport.Model[diffLine], code rune, mod tea.KeyMod) int {
+// libraryPageStep is how far the viewport's own paging moves: a full screen of
+// content. PageStep is measured against it so the arithmetic in contentLines
+// stays honest if the library changes how it accounts for header/footer.
+func libraryPageStep(t *testing.T, height int, header []string) int {
 	t.Helper()
-	vp, _ = vp.Update(tea.KeyPressMsg{Code: code, Mod: mod})
-	top, _ := vp.GetTopItemIdxAndLineOffset()
-	return top
+	km := viewport.DefaultKeyMap()
+	vp := viewport.New(80, height, viewport.WithKeyMap[diffLine](km))
+	vp.SetObjects(testLines(500))
+	if len(header) > 0 {
+		vp.SetHeader(header)
+	}
+	before, _ := vp.GetTopItemIdxAndLineOffset()
+	vp, _ = vp.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
+	after, _ := vp.GetTopItemIdxAndLineOffset()
+	return after - before
 }
 
-// PageDown/PageUp are supported by the viewport but were left unbound, so
-// pgdn/pgup did nothing. Guard the bindings and their relation to ctrl+d.
-func TestPageKeysScrollAFullPage(t *testing.T) {
-	vp := newPagingViewport(t)
-	if top, _ := vp.GetTopItemIdxAndLineOffset(); top != 0 {
-		t.Fatalf("want start at top, got %d", top)
-	}
+func TestPageStepLeavesOverlap(t *testing.T) {
+	for _, height := range []int{10, 20, 40} {
+		for _, withHeader := range []bool{false, true} {
+			name := fmt.Sprintf("h=%d header=%v", height, withHeader)
+			t.Run(name, func(t *testing.T) {
+				m := New(false)
+				m.SetSize(80+scrollbarWidth, height)
+				m.fvp.SetObjects(testLines(500))
 
-	pageDown := pressKey(t, vp, tea.KeyPgDown, 0)
-	if pageDown == 0 {
-		t.Fatal("pgdown did not scroll: binding never reached the viewport")
-	}
+				var header []string
+				if withHeader {
+					m.dir = &cachedNode{path: "some/dir"}
+					header = strings.Split(m.headerView(), "\n")
+					m.fvp.SetHeader(header)
+				}
 
-	if pageUp := pressKey(t, vp, tea.KeyPgUp, 0); pageUp != 0 {
-		t.Fatalf("pgup did not return to the top, got %d", pageUp)
+				want := libraryPageStep(t, height, header) - pageOverlap
+				if got := m.PageStep(); got != want {
+					t.Fatalf("PageStep() = %d, want %d (library pages %d)",
+						got, want, want+pageOverlap)
+				}
+			})
+		}
 	}
+}
 
-	halfPageDown := pressKey(t, newPagingViewport(t), 'd', tea.ModCtrl)
-	if pageDown <= halfPageDown {
-		t.Fatalf("want pgdown (%d) to scroll further than ctrl+d (%d)", pageDown, halfPageDown)
+// A page must never scroll further than a screen, and never stall.
+func TestPageStepBounds(t *testing.T) {
+	for _, height := range []int{1, 2, 3, 5, 10, 60} {
+		m := New(false)
+		m.SetSize(80+scrollbarWidth, height)
+		m.fvp.SetObjects(testLines(500))
+
+		step := m.PageStep()
+		if step < 1 {
+			t.Fatalf("height=%d: PageStep() = %d, must advance at least a line", height, step)
+		}
+		if visible := m.contentLines(); visible > 0 && step > visible {
+			t.Fatalf("height=%d: PageStep() = %d scrolls past the %d visible lines",
+				height, step, visible)
+		}
 	}
 }
