@@ -1256,10 +1256,13 @@ func (m mainModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 // copySelection puts the dragged text on the clipboard. Selecting copies
 // straight away, so there is no separate copy key to press.
+//
+// A failed write is logged and dropped rather than returned as common.ErrMsg,
+// which is fatal: losing a copy is not a reason to take the pager down with it.
 func copySelection(text string) tea.Cmd {
 	return func() tea.Msg {
 		if err := clipboard.WriteAll(text); err != nil {
-			return common.ErrMsg{Err: err}
+			log.Error("could not copy selection to clipboard", "err", err)
 		}
 		return nil
 	}
