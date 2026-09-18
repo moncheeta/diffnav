@@ -16,6 +16,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"charm.land/log/v2"
+	"github.com/atotto/clipboard"
 	"github.com/bluekeyes/go-gitdiff/gitdiff"
 	zone "github.com/lrstanley/bubblezone/v2"
 
@@ -82,6 +83,7 @@ type mainModel struct {
 	filtered          []string
 	config            config.Config
 	draggingSidebar   bool
+	selectingText     bool
 	iconStyle         string
 	sideBySide        bool
 	help              help.Model
@@ -202,6 +204,10 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
+		// The selection is anchored to the screen, so any key that might move
+		// the content underneath it drops it rather than leaving a stale
+		// highlight over different text.
+		m.diffViewer.ClearSelection()
 		switch {
 		case key.Matches(msg, keys.ToggleHelp):
 			m.helpOpen = !m.helpOpen
@@ -1201,6 +1207,13 @@ func (m mainModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			if !m.searchingFiles && zone.Get(zoneFileTree).InBounds(msg) {
 				return m.handleFileTreeClick(msg)
 			}
+			// Drag in the diff to select text, tmux style.
+			if zone.Get(zoneDiffViewer).InBounds(msg) {
+				x, y := zone.Get(zoneDiffViewer).Pos(msg)
+				m.diffViewer.BeginSelect(y, x)
+				m.selectingText = true
+				return m, nil
+			}
 			if zone.Get(zoneHelp).InBounds(msg) {
 				m.helpOpen = !m.helpOpen
 				m.messageOpen = false
@@ -1219,14 +1232,37 @@ func (m mainModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseReleaseMsg:
 		m.draggingSidebar = false
+		if m.selectingText {
+			m.selectingText = false
+			if text := m.diffViewer.SelectedText(); text != "" {
+				return m, copySelection(text)
+			}
+			m.diffViewer.ClearSelection()
+		}
 
 	case tea.MouseMotionMsg:
 		if m.draggingSidebar {
 			return m.handleSidebarDrag(msg)
 		}
+		if m.selectingText {
+			x, y := zone.Get(zoneDiffViewer).Pos(msg)
+			m.diffViewer.ExtendSelect(y, x)
+			return m, nil
+		}
 	}
 
 	return m, nil
+}
+
+// copySelection puts the dragged text on the clipboard. Selecting copies
+// straight away, so there is no separate copy key to press.
+func copySelection(text string) tea.Cmd {
+	return func() tea.Msg {
+		if err := clipboard.WriteAll(text); err != nil {
+			return common.ErrMsg{Err: err}
+		}
+		return nil
+	}
 }
 
 func (m mainModel) handleSearchResultClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
@@ -1322,6 +1358,7 @@ func (m mainModel) handleScroll(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	// Check if scrolling in diff viewer.
 	if zone.Get(zoneDiffViewer).InBounds(msg) {
+		m.diffViewer.ClearSelection()
 		if msg.Mouse().Button == tea.MouseWheelUp {
 			m.diffViewer.ScrollUp(lines)
 		} else {

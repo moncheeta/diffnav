@@ -95,6 +95,7 @@ var ViewportKeyMap = viewport.KeyMap{
 
 type Model struct {
 	common.Common
+	textSel    selection
 	fvp        *filterableviewport.Model[diffLine]
 	file       *cachedNode
 	dir        *cachedNode
@@ -235,6 +236,12 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 const scrollbarWidth = 2 // 1 scrollbar character + 1 padding
 
 func (m Model) View() string {
+	return m.textSel.apply(m.baseView())
+}
+
+// baseView is the pane before any selection highlight. Selection coordinates
+// index into this, and copying reads from it.
+func (m Model) baseView() string {
 	vpView := m.fvp.View()
 	itemMetrics := m.fvp.GetItemMetrics()
 	scrollbar := m.sb.View(
@@ -603,6 +610,40 @@ func (m *Model) SetFiltering() {
 
 func (m *Model) Filtering() bool {
 	return m.fvp.GetActiveFilterMode() != nil
+}
+
+// BeginSelect starts a drag selection at a cell of the rendered pane.
+func (m *Model) BeginSelect(row, col int) {
+	at := point{row: row, col: col}
+	m.textSel = selection{active: true, anchor: at, head: at}
+}
+
+// ExtendSelect moves the loose end of an in-progress drag.
+func (m *Model) ExtendSelect(row, col int) {
+	if !m.textSel.active {
+		return
+	}
+	m.textSel.head = point{row: row, col: col}
+}
+
+// SelectedText is the selected text, stripped of styling. Empty when a click
+// selected nothing.
+func (m Model) SelectedText() string {
+	if m.textSel.empty() {
+		return ""
+	}
+	return m.textSel.extract(strings.Split(m.baseView(), "\n"))
+}
+
+// HasSelection reports whether any text is selected.
+func (m Model) HasSelection() bool {
+	return !m.textSel.empty()
+}
+
+// ClearSelection drops the selection and its highlight. The selection is
+// anchored to the screen, so anything that moves the content calls this.
+func (m *Model) ClearSelection() {
+	m.textSel = selection{}
 }
 
 func (m *Model) SelectionEnabled() bool {

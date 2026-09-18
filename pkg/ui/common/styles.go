@@ -21,6 +21,8 @@ const (
 	MutedFg
 	BorderFocus
 	BorderMuted
+	SelectBg
+	SelectFg
 )
 
 // Chrome colors are Flexoki (https://stephango.com/flexoki), picked to match
@@ -60,6 +62,8 @@ func chromeColors() map[Key]color.RGBA {
 			MutedFg:        {R: 0x6F, G: 0x6E, B: 0x69, A: 0xFF}, // base-600
 			BorderFocus:    {R: 0x20, G: 0x5E, B: 0xA6, A: 0xFF}, // blue-600
 			BorderMuted:    {R: 0xCE, G: 0xCD, B: 0xC3, A: 0xFF}, // base-200
+			SelectBg:       {R: 0x20, G: 0x5E, B: 0xA6, A: 0xFF}, // blue-600
+			SelectFg:       {R: 0xFF, G: 0xFC, B: 0xF0, A: 0xFF}, // paper
 		}
 	}
 	return map[Key]color.RGBA{
@@ -69,6 +73,8 @@ func chromeColors() map[Key]color.RGBA {
 		MutedFg:        {R: 0x87, G: 0x85, B: 0x80, A: 0xFF}, // base-500
 		BorderFocus:    {R: 0x43, G: 0x85, B: 0xBE, A: 0xFF}, // blue-400
 		BorderMuted:    {R: 0x40, G: 0x3E, B: 0x3C, A: 0xFF}, // base-800
+		SelectBg:       {R: 0x43, G: 0x85, B: 0xBE, A: 0xFF}, // blue-400
+		SelectFg:       {R: 0x10, G: 0x0F, B: 0x0F, A: 0xFF}, // black
 	}
 }
 
