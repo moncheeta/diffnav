@@ -552,23 +552,24 @@ func (m mainModel) View() tea.View {
 
 	view.KeyboardEnhancements.ReportEventTypes = true
 	// Determine colors based on active panel.
-	// The focused pane gets a heavy rule above it; the divider between the two
-	// is a shared edge, part of both panes' outlines, so it always reads as
-	// active. Which pane has focus is carried by which half of the rule is
-	// heavy, and by the junction glyph joining it to the divider.
+	// The divider carries focus: heavy and coloured while the sidebar has it,
+	// light and muted while the diff does. It is the only pane chrome left
+	// when the header (and with it the rule above the panes) is hidden.
+	// When the rule is drawn, its heavy half agrees with the divider.
 	muted := common.Colors[common.BorderMuted]
 	focus := common.Colors[common.BorderFocus]
 	leftColor, rightColor := muted, muted
 	leftRule, rightRule := "─", "─"
-	junction := "┲"
+	junction := "┮"
+	dividerColor, divider := muted, "│"
 	if m.sidebarFocused() {
 		leftColor = focus
 		leftRule, junction = "━", "┱"
+		dividerColor, divider = focus, "┃"
 	} else {
 		rightColor = focus
 		rightRule = "━"
 	}
-	dividerColor, divider := focus, "┃"
 
 	// Build T-shaped separator line.
 	separator := ""
@@ -633,9 +634,9 @@ func (m mainModel) View() tea.View {
 
 	if !m.config.UI.HideHeader {
 		sections = append(sections, m.viewHeader())
+		sections = append(sections, separator)
 	}
 
-	sections = append(sections, separator)
 	sections = append(sections, mainContent)
 
 	if !m.config.UI.HideFooter {

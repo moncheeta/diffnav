@@ -20,6 +20,11 @@ var ansiSeq = regexp.MustCompile("\x1b\\[[0-9;]*m")
 
 func renderPanes(t *testing.T, mutate func(*mainModel)) []string {
 	t.Helper()
+	return renderPanesWith(t, config.DefaultConfig(), mutate)
+}
+
+func renderPanesWith(t *testing.T, cfg config.Config, mutate func(*mainModel)) []string {
+	t.Helper()
 	zone.NewGlobal()
 
 	f, err := os.Open("panes/filetree/testdata/multiple_files.diff")
@@ -32,7 +37,6 @@ func renderPanes(t *testing.T, mutate func(*mainModel)) []string {
 		t.Fatal(err)
 	}
 
-	cfg := config.DefaultConfig()
 	m := New("", cfg)
 	m.width, m.height = 120, 30
 	m.files = files
@@ -55,7 +59,7 @@ func TestFocusedPaneGetsHeavyRule(t *testing.T) {
 	}{
 		{"tree focused", func(m *mainModel) { m.activePanel = FileTreePanel }, "┱", true},
 		{"file search list", func(m *mainModel) { m.searchingFiles = true }, "┱", true},
-		{"diff focused", func(m *mainModel) { m.activePanel = DiffViewerPanel }, "┲", false},
+		{"diff focused", func(m *mainModel) { m.activePanel = DiffViewerPanel }, "┮", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rows := renderPanes(t, tc.mutate)
@@ -95,33 +99,76 @@ func TestFocusedPaneGetsHeavyRule(t *testing.T) {
 	}
 }
 
-// The divider is the shared edge of both panes, so it stays active regardless
-// of which one has focus -- otherwise the focused pane's outline is left open.
-func TestSharedDividerAlwaysActive(t *testing.T) {
+// With the header hidden there is no rule above the panes, so the divider is
+// the only thing left to carry focus: heavy while the sidebar has it, light
+// while the diff does.
+func TestDividerFollowsFocus(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		mutate func(*mainModel)
+		name      string
+		mutate    func(*mainModel)
+		wantHeavy bool
 	}{
-		{"tree focused", func(m *mainModel) { m.activePanel = FileTreePanel }},
-		{"file search list", func(m *mainModel) { m.searchingFiles = true }},
-		{"diff focused", func(m *mainModel) { m.activePanel = DiffViewerPanel }},
+		{"tree focused", func(m *mainModel) { m.activePanel = FileTreePanel }, true},
+		{"file search list", func(m *mainModel) { m.searchingFiles = true }, true},
+		{"diff focused", func(m *mainModel) { m.activePanel = DiffViewerPanel }, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			rows := renderPanes(t, tc.mutate)
+			for _, hideHeader := range []bool{false, true} {
+				cfg := config.DefaultConfig()
+				cfg.UI.HideHeader = hideHeader
+				rows := renderPanesWith(t, cfg, tc.mutate)
 
-			found := 0
-			for _, r := range rows {
-				if !strings.Contains(r, "┃") {
-					continue
+				heavy := 0
+				for _, r := range rows {
+					if strings.Contains(r, "┃") {
+						heavy++
+						if !strings.Contains(r, focusFg) {
+							t.Fatalf("hideHeader=%v: heavy divider not in focus colour: %q",
+								hideHeader, r)
+						}
+					}
 				}
-				found++
-				if !strings.Contains(r, focusFg) {
-					t.Fatalf("divider row not in focus colour: %q", r)
+				if (heavy > 0) != tc.wantHeavy {
+					t.Fatalf("hideHeader=%v: heavy divider rows = %d, want heavy=%v",
+						hideHeader, heavy, tc.wantHeavy)
 				}
-			}
-			if found == 0 {
-				t.Fatal("no heavy divider rendered")
 			}
 		})
+	}
+}
+
+// Hiding the header must take the rule above the panes with it -- otherwise a
+// stray line is left at the very top, and headerHeight (which budgets for
+// both rows) leaves the layout one row over.
+func TestHideHeaderRemovesTopRule(t *testing.T) {
+	shown := config.DefaultConfig()
+	hidden := config.DefaultConfig()
+	hidden.UI.HideHeader = true
+
+	focusTree := func(m *mainModel) { m.activePanel = FileTreePanel }
+	withHeader := renderPanesWith(t, shown, focusTree)
+	without := renderPanesWith(t, hidden, focusTree)
+
+	firstShown := ansiSeq.ReplaceAllString(withHeader[0], "")
+	if !strings.Contains(strings.ToUpper(firstShown), "DIFFNAV") {
+		t.Fatalf("expected the header first with it shown, got %q", firstShown)
+	}
+	if !strings.ContainsAny(ansiSeq.ReplaceAllString(withHeader[1], ""), "━─") {
+		t.Fatal("expected the rule directly under the header")
+	}
+
+	for i, r := range without {
+		plain := ansiSeq.ReplaceAllString(r, "")
+		if strings.Contains(strings.ToUpper(plain), "DIFFNAV") {
+			t.Fatalf("row %d still shows the header: %q", i, plain)
+		}
+	}
+	first := ansiSeq.ReplaceAllString(without[0], "")
+	if strings.HasPrefix(first, "━") || strings.HasPrefix(first, "─") {
+		t.Fatalf("stray rule left at the top: %q", first)
+	}
+	if len(without) >= len(withHeader) {
+		t.Fatalf("hiding the header should free rows: %d without vs %d with",
+			len(without), len(withHeader))
 	}
 }
