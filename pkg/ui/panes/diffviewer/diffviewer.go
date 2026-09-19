@@ -97,6 +97,7 @@ var ViewportKeyMap = viewport.KeyMap{
 type Model struct {
 	common.Common
 	textSel    selection
+	wordDrag   wordAnchor
 	fvp        *filterableviewport.Model[diffLine]
 	file       *cachedNode
 	dir        *cachedNode
@@ -617,6 +618,7 @@ func (m *Model) Filtering() bool {
 func (m *Model) BeginSelect(row, col int) {
 	at := point{row: row, col: col}
 	m.textSel = selection{active: true, anchor: at, head: at}
+	m.wordDrag = wordAnchor{}
 }
 
 // ExtendSelect moves the loose end of an in-progress drag.
@@ -643,7 +645,45 @@ func (m *Model) SelectWordAt(row, col int) bool {
 		anchor: point{row: row, col: from},
 		head:   point{row: row, col: to},
 	}
+	m.wordDrag = wordAnchor{active: true, row: row, from: from, to: to}
 	return true
+}
+
+// ExtendSelectByWord moves the loose end of a drag that began with a
+// double-click, snapping to whole words so the selection always covers
+// complete words at both ends. Falls back to cell-wise extension if the drag
+// did not start on a word.
+func (m *Model) ExtendSelectByWord(row, col int) {
+	if !m.wordDrag.active {
+		m.ExtendSelect(row, col)
+		return
+	}
+
+	// The word under the cursor, or the bare cell if there is none.
+	headFrom, headTo := col, col
+	lines := strings.Split(m.baseView(), "\n")
+	if row >= 0 && row < len(lines) {
+		if from, to, ok := wordAt(ansi.Strip(lines[row]), col); ok {
+			headFrom, headTo = from, to
+		}
+	}
+
+	anchor := m.wordDrag
+	// Dragging back past the anchor word flips which end is fixed, so the
+	// anchor word stays whole either way.
+	if (point{row: row, col: headFrom}).before(point{row: anchor.row, col: anchor.from}) {
+		m.textSel = selection{
+			active: true,
+			anchor: point{row: anchor.row, col: anchor.to},
+			head:   point{row: row, col: headFrom},
+		}
+		return
+	}
+	m.textSel = selection{
+		active: true,
+		anchor: point{row: anchor.row, col: anchor.from},
+		head:   point{row: row, col: headTo},
+	}
 }
 
 // SelectedText is the selected text, stripped of styling. Empty when a click
@@ -664,6 +704,7 @@ func (m Model) HasSelection() bool {
 // anchored to the screen, so anything that moves the content calls this.
 func (m *Model) ClearSelection() {
 	m.textSel = selection{}
+	m.wordDrag = wordAnchor{}
 }
 
 func (m *Model) SelectionEnabled() bool {

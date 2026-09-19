@@ -87,6 +87,7 @@ type mainModel struct {
 	config            config.Config
 	draggingSidebar   bool
 	selectingText     bool
+	selectingWords    bool
 	lastClickAt       time.Time
 	lastClickX        int
 	lastClickY        int
@@ -1224,15 +1225,18 @@ func (m mainModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 					// Start over, so a third click is a fresh single click.
 					m.lastClickAt = time.Time{}
 					if m.diffViewer.SelectWordAt(y, x) {
-						if text := m.diffViewer.SelectedText(); text != "" {
-							return m, copySelection(text)
-						}
+						// Keep tracking: dragging on from here extends the
+						// selection a word at a time. The release copies,
+						// whether or not a drag followed.
+						m.selectingText = true
+						m.selectingWords = true
+						return m, nil
 					}
-					return m, nil
 				}
 				m.lastClickAt, m.lastClickX, m.lastClickY = now, x, y
 				m.diffViewer.BeginSelect(y, x)
 				m.selectingText = true
+				m.selectingWords = false
 				return m, nil
 			}
 			if zone.Get(zoneHelp).InBounds(msg) {
@@ -1255,6 +1259,7 @@ func (m mainModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		m.draggingSidebar = false
 		if m.selectingText {
 			m.selectingText = false
+			m.selectingWords = false
 			if text := m.diffViewer.SelectedText(); text != "" {
 				return m, copySelection(text)
 			}
@@ -1267,7 +1272,11 @@ func (m mainModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.selectingText {
 			x, y := zone.Get(zoneDiffViewer).Pos(msg)
-			m.diffViewer.ExtendSelect(y, x)
+			if m.selectingWords {
+				m.diffViewer.ExtendSelectByWord(y, x)
+			} else {
+				m.diffViewer.ExtendSelect(y, x)
+			}
 			return m, nil
 		}
 	}

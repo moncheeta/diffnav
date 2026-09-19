@@ -119,6 +119,15 @@ func (s selection) apply(view string) string {
 	return strings.Join(lines, "\n")
 }
 
+// wordAnchor is the word a double-click landed on. A drag starting from it
+// extends the selection a whole word at a time, so the word it began on always
+// stays intact.
+type wordAnchor struct {
+	active   bool
+	row      int
+	from, to int // inclusive cell range
+}
+
 // isWordRune decides what a double-click grabs. Letters, digits and
 // underscores, which is the usual terminal convention: double-clicking
 // `foo.bar` picks out `foo`, not the whole expression.

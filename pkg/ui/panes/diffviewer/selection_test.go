@@ -245,3 +245,100 @@ func TestSelectWordAtFromRenderedPane(t *testing.T) {
 		t.Fatalf("SelectWordAt on a space selected %q", m.SelectedText())
 	}
 }
+
+// Double-click then drag: the word the drag began on stays whole, and the far
+// end snaps out to cover whole words too.
+func TestExtendSelectByWord(t *testing.T) {
+	newPane := func(t *testing.T, lines ...string) *Model {
+		t.Helper()
+		m := New(false)
+		m.SetSize(60+scrollbarWidth, 12)
+		objs := make([]diffLine, len(lines))
+		for i, l := range lines {
+			objs[i] = diffLine{item: item.NewItem(l)}
+		}
+		m.fvp.SetObjects(objs)
+		return &m
+	}
+
+	// Locate a rendered row and the column a substring starts at.
+	locate := func(t *testing.T, m *Model, want string) (int, int) {
+		t.Helper()
+		for i, r := range strings.Split(m.baseView(), "\n") {
+			if idx := strings.Index(ansi.Strip(r), want); idx >= 0 {
+				return i, idx
+			}
+		}
+		t.Fatalf("%q not rendered:\n%s", want, ansi.Strip(m.baseView()))
+		return -1, -1
+	}
+
+	t.Run("dragging forward takes whole words", func(t *testing.T) {
+		m := newPane(t, "alpha bravo charlie delta")
+		row, bravo := locate(t, m, "bravo")
+		_, charlie := locate(t, m, "charlie")
+
+		if !m.SelectWordAt(row, bravo+2) {
+			t.Fatal("no word under the double-click")
+		}
+		// Drag into the middle of charlie: both words come whole.
+		m.ExtendSelectByWord(row, charlie+3)
+		if got := m.SelectedText(); got != "bravo charlie" {
+			t.Fatalf("SelectedText() = %q, want %q", got, "bravo charlie")
+		}
+	})
+
+	t.Run("dragging backward keeps the anchor word whole", func(t *testing.T) {
+		m := newPane(t, "alpha bravo charlie delta")
+		row, charlie := locate(t, m, "charlie")
+		_, alpha := locate(t, m, "alpha")
+
+		if !m.SelectWordAt(row, charlie+3) {
+			t.Fatal("no word under the double-click")
+		}
+		m.ExtendSelectByWord(row, alpha+2)
+		if got := m.SelectedText(); got != "alpha bravo charlie" {
+			t.Fatalf("SelectedText() = %q, want %q", got, "alpha bravo charlie")
+		}
+	})
+
+	t.Run("dragging across rows", func(t *testing.T) {
+		m := newPane(t, "alpha bravo", "charlie delta")
+		rowA, bravo := locate(t, m, "bravo")
+		rowB, charlie := locate(t, m, "charlie")
+
+		if !m.SelectWordAt(rowA, bravo+1) {
+			t.Fatal("no word under the double-click")
+		}
+		m.ExtendSelectByWord(rowB, charlie+2)
+		if got := m.SelectedText(); got != "bravo\ncharlie" {
+			t.Fatalf("SelectedText() = %q, want %q", got, "bravo\ncharlie")
+		}
+	})
+
+	t.Run("dragging onto a gap stops there, trailing space trimmed", func(t *testing.T) {
+		m := newPane(t, "alpha bravo charlie")
+		row, bravo := locate(t, m, "bravo")
+		_, charlie := locate(t, m, "charlie")
+
+		if !m.SelectWordAt(row, bravo+2) {
+			t.Fatal("no word under the double-click")
+		}
+		m.ExtendSelectByWord(row, charlie-1) // the space before charlie
+		// The space is in range but trimmed along with the row's padding.
+		if got := m.SelectedText(); got != "bravo" {
+			t.Fatalf("SelectedText() = %q, want %q", got, "bravo")
+		}
+	})
+
+	t.Run("without a double-click it stays cell-wise", func(t *testing.T) {
+		m := newPane(t, "alpha bravo charlie")
+		row, bravo := locate(t, m, "bravo")
+
+		m.BeginSelect(row, bravo) // plain drag, no word anchor
+		m.ExtendSelectByWord(row, bravo+2)
+		if got := m.SelectedText(); got != "bra" {
+			t.Fatalf("SelectedText() = %q, want %q", got, "bra")
+		}
+	})
+}
