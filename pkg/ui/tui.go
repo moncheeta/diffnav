@@ -39,7 +39,10 @@ const (
 	headerHeight  = 2
 	// messagePageOverlap mirrors the diff viewer's page overlap.
 	messagePageOverlap = 2
-	searchHeight       = 3
+	// doubleClickWindow is how close together two clicks on the same cell must
+	// land to count as a double-click, which selects the word under them.
+	doubleClickWindow = 500 * time.Millisecond
+	searchHeight      = 3
 
 	// Zone IDs for bubblezone click detection.
 	zoneSearchBox     = "searchbox"
@@ -84,6 +87,9 @@ type mainModel struct {
 	config            config.Config
 	draggingSidebar   bool
 	selectingText     bool
+	lastClickAt       time.Time
+	lastClickX        int
+	lastClickY        int
 	iconStyle         string
 	sideBySide        bool
 	help              help.Model
@@ -1207,9 +1213,24 @@ func (m mainModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			if !m.searchingFiles && zone.Get(zoneFileTree).InBounds(msg) {
 				return m.handleFileTreeClick(msg)
 			}
-			// Drag in the diff to select text, tmux style.
+			// Drag in the diff to select text, tmux style. Two clicks on the
+			// same cell in quick succession select the word instead.
 			if zone.Get(zoneDiffViewer).InBounds(msg) {
 				x, y := zone.Get(zoneDiffViewer).Pos(msg)
+				now := time.Now()
+				isDouble := x == m.lastClickX && y == m.lastClickY &&
+					now.Sub(m.lastClickAt) < doubleClickWindow
+				if isDouble {
+					// Start over, so a third click is a fresh single click.
+					m.lastClickAt = time.Time{}
+					if m.diffViewer.SelectWordAt(y, x) {
+						if text := m.diffViewer.SelectedText(); text != "" {
+							return m, copySelection(text)
+						}
+					}
+					return m, nil
+				}
+				m.lastClickAt, m.lastClickX, m.lastClickY = now, x, y
 				m.diffViewer.BeginSelect(y, x)
 				m.selectingText = true
 				return m, nil

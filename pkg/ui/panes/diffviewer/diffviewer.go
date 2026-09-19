@@ -11,6 +11,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"charm.land/log/v2"
 	"github.com/bluekeyes/go-gitdiff/gitdiff"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/dlvhdr/diffnav/pkg/filenode"
 	"github.com/dlvhdr/diffnav/pkg/icons"
@@ -624,6 +625,25 @@ func (m *Model) ExtendSelect(row, col int) {
 		return
 	}
 	m.textSel.head = point{row: row, col: col}
+}
+
+// SelectWordAt selects the word under a cell, reporting whether there was one.
+// Used for double-click.
+func (m *Model) SelectWordAt(row, col int) bool {
+	lines := strings.Split(m.baseView(), "\n")
+	if row < 0 || row >= len(lines) {
+		return false
+	}
+	from, to, ok := wordAt(ansi.Strip(lines[row]), col)
+	if !ok {
+		return false
+	}
+	m.textSel = selection{
+		active: true,
+		anchor: point{row: row, col: from},
+		head:   point{row: row, col: to},
+	}
+	return true
 }
 
 // SelectedText is the selected text, stripped of styling. Empty when a click
