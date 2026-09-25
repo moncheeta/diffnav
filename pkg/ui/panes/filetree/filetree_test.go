@@ -272,3 +272,49 @@ func TestCloseDirsBelowDepthOne(t *testing.T) {
 		}
 	}
 }
+
+// Enter on a file moves focus to the diff instead of toggling nothing, so the
+// cursor's node type has to be reported accurately.
+func TestIsCurrNodeFile(t *testing.T) {
+	f, err := os.Open("testdata/multiple_files.diff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, _, err := gitdiff.Parse(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.UI.StartFoldersOpenDepth = -1 // open everything so files are visible rows
+	common.RegisterSupportedTints()
+	styles := common.MakeStyles()
+	m := New(cfg, &styles)
+	m.SetSize(40, 20)
+	m = m.SetFiles(files)
+
+	// Walk every row and compare the answer against the node's real type.
+	seenFile, seenDir := false, false
+	for i := 0; i < len(m.t.AllNodes()); i++ {
+		m.t.SetYOffset(i)
+		node := m.GetCurrNode()
+		if node == nil {
+			continue
+		}
+		_, isFile := node.GivenValue().(*filenode.FileNode)
+		if got := m.IsCurrNodeFile(); got != isFile {
+			t.Fatalf("row %d (%q): IsCurrNodeFile() = %v, want %v",
+				i, node.Value(), got, isFile)
+		}
+		if isFile {
+			seenFile = true
+		} else {
+			seenDir = true
+		}
+	}
+
+	if !seenFile || !seenDir {
+		t.Fatalf("expected the fixture to cover both files and dirs, got file=%v dir=%v",
+			seenFile, seenDir)
+	}
+}

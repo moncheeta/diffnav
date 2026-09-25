@@ -434,6 +434,16 @@ func (m *Model) GetCurrNode() *tree.Node {
 	return m.t.NodeAtCurrentOffset()
 }
 
+// IsCurrNodeFile reports whether the cursor is on a file rather than a directory.
+func (m *Model) IsCurrNodeFile() bool {
+	node := m.GetCurrNode()
+	if node == nil {
+		return false
+	}
+	_, ok := node.GivenValue().(*filenode.FileNode)
+	return ok
+}
+
 func (m *Model) GetCurrNodeDesendantDiffs() []*gitdiff.File {
 	var files []*gitdiff.File
 	for _, node := range m.GetCurrNode().AllNodes() {

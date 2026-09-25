@@ -403,6 +403,14 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sideBySide = !m.sideBySide
 			cmd = m.diffViewer.SetSideBySide(m.sideBySide)
 			cmds = append(cmds, cmd)
+		case m.activePanel == FileTreePanel && key.Matches(msg, keys.ToggleNode):
+			// A file node has nothing to expand, so enter would be a no-op.
+			// Move focus to the diff, which already shows the selected file.
+			if m.fileTree.IsCurrNodeFile() {
+				m.activePanel = DiffViewerPanel
+			} else {
+				m.fileTree.Update(msg)
+			}
 		case key.Matches(msg, keys.SwitchPanel):
 			if m.isShowingFileTree {
 				if m.activePanel == FileTreePanel {
@@ -629,6 +637,12 @@ func (m mainModel) followsAppearance() bool {
 	return m.config.UI.Theme == common.ThemeAuto
 }
 
+// sidebarFocused reports whether keyboard focus is in the sidebar. The file
+// tree and the file search list share a border, so both count as focused.
+func (m mainModel) sidebarFocused() bool {
+	return m.searchingFiles || m.activePanel == FileTreePanel
+}
+
 func (m *mainModel) onThemeChanged(themeId string) tea.Cmd {
 	if ok := common.Themes.SetTintID(themeId); ok {
 		*m.styles = common.MakeStyles()
@@ -716,13 +730,26 @@ func (m mainModel) View() tea.View {
 	view.AltScreen = true
 	view.MouseMode = tea.MouseModeAllMotion
 
-	// Determine colors based on active panel.
-	leftColor := m.styles.Tint.Black
-	rightColor := m.styles.Tint.Black
-	if m.activePanel == FileTreePanel && !m.searchingFiles {
-		leftColor = m.styles.Tint.Blue
-	} else if m.activePanel == DiffViewerPanel {
-		rightColor = m.styles.Tint.Blue
+	// The focused pane gets a heavy rule above it and the other a light one,
+	// so the panes read apart without depending on colour alone. The divider
+	// carries focus too: colour on a one-cell border was easy to miss, and it
+	// is all that is left when the header (and its rule) is hidden.
+	//
+	// The sidebar counts as focused whether it is showing the tree or the file
+	// search list — they share that border.
+	muted := m.styles.Tint.Black
+	focus := m.styles.Tint.Blue
+	leftColor, rightColor := muted, muted
+	leftRule, rightRule := "─", "─"
+	junction := "┮"
+	dividerColor, divider := muted, "│"
+	if m.sidebarFocused() {
+		leftColor = focus
+		leftRule, junction = "━", "┱"
+		dividerColor, divider = focus, "┃"
+	} else {
+		rightColor = focus
+		rightRule = "━"
 	}
 
 	// Build T-shaped separator line.
@@ -733,16 +760,16 @@ func (m mainModel) View() tea.View {
 			rightW := max(m.width-sidebarW, 0)
 			leftLine := lipgloss.NewStyle().
 				Foreground(leftColor).
-				Render(strings.Repeat("─", sidebarW))
-			junction := lipgloss.NewStyle().Foreground(leftColor).Render("┬")
+				Render(strings.Repeat(leftRule, sidebarW))
+			junctionStr := lipgloss.NewStyle().Foreground(dividerColor).Render(junction)
 			rightLine := lipgloss.NewStyle().
 				Foreground(rightColor).
-				Render(strings.Repeat("─", rightW))
-			separator = leftLine + junction + rightLine
+				Render(strings.Repeat(rightRule, rightW))
+			separator = leftLine + junctionStr + rightLine
 		} else {
 			separator = lipgloss.NewStyle().
 				Foreground(rightColor).
-				Render(strings.Repeat("─", m.width))
+				Render(strings.Repeat(rightRule, m.width))
 		}
 	}
 
@@ -764,9 +791,11 @@ func (m mainModel) View() tea.View {
 		content = lipgloss.NewStyle().
 			Render(lipgloss.JoinVertical(lipgloss.Left, searchBox, content))
 
+		sidebarBorder := lipgloss.NormalBorder()
+		sidebarBorder.Right = divider
 		sidebar = lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder(), false, true, false, false).
-			BorderForeground(leftColor).Render(content)
+			Border(sidebarBorder, false, true, false, false).
+			BorderForeground(dividerColor).Render(content)
 	} else {
 		// Show a thin grab line when sidebar is hidden.
 		// Width(0) means only the border is rendered (1 char).
@@ -786,9 +815,9 @@ func (m mainModel) View() tea.View {
 
 	if !m.config.UI.HideHeader {
 		sections = append(sections, m.viewHeader())
+		sections = append(sections, separator)
 	}
 
-	sections = append(sections, separator)
 	sections = append(sections, mainContent)
 
 	if !m.config.UI.HideFooter {
