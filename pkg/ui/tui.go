@@ -39,7 +39,9 @@ const (
 	minResizeStep = 6
 	footerHeight  = 1
 	headerHeight  = 2
-	searchHeight  = 3
+	// messagePageOverlap mirrors the diff viewer's page overlap.
+	messagePageOverlap = 2
+	searchHeight       = 3
 
 	// Zone IDs for bubblezone click detection.
 	zoneSearchBox     = "searchbox"
@@ -337,6 +339,12 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case m.messageOpen && key.Matches(msg, keys.CtrlU):
 			m.messageVp.ScrollUp(m.messageVp.Height() / 2)
 			return m, tea.Batch(cmds...)
+		case m.messageOpen && key.Matches(msg, keys.PageDown):
+			m.messageVp.ScrollDown(max(1, m.messageVp.Height()-messagePageOverlap))
+			return m, tea.Batch(cmds...)
+		case m.messageOpen && key.Matches(msg, keys.PageUp):
+			m.messageVp.ScrollUp(max(1, m.messageVp.Height()-messagePageOverlap))
+			return m, tea.Batch(cmds...)
 		case m.helpOpen || m.messageOpen:
 			// Block all other keys while an overlay is open
 			return m, tea.Batch(cmds...)
@@ -453,6 +461,12 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if cmd != nil {
 				cmds = append(cmds, cmd)
 			}
+
+		case key.Matches(msg, keys.PageDown):
+			m.diffViewer.ScrollDown(m.diffViewer.PageStep())
+
+		case key.Matches(msg, keys.PageUp):
+			m.diffViewer.ScrollUp(m.diffViewer.PageStep())
 
 		case key.Matches(msg, keys.CtrlE):
 			m.diffViewer.ScrollDown(1)
@@ -692,7 +706,6 @@ func (m mainModel) View() tea.View {
 	view.AltScreen = true
 	view.MouseMode = tea.MouseModeAllMotion
 
-	view.KeyboardEnhancements.ReportEventTypes = true
 	// Determine colors based on active panel.
 	leftColor := m.styles.Tint.Black
 	rightColor := m.styles.Tint.Black
