@@ -104,7 +104,7 @@ type mainModel struct {
 	pendingCursorPath string
 	watchInFlight     bool
 	repoRoot          string
-	styles            common.Styles
+	styles            *common.Styles
 }
 
 type ModelOpts struct {
@@ -114,11 +114,15 @@ type ModelOpts struct {
 
 func New(opts ModelOpts, cfg config.Config) mainModel {
 	common.RegisterSupportedTints()
-	theme := cfg.UI.Theme
-	if envTheme := os.Getenv("DIFFNAV_THEME"); envTheme != "" {
-		theme = envTheme
-	}
+	theme := resolveTheme(cfg)
 	common.Themes.SetTintID(theme)
+
+	// One shared styles value, built once the theme is chosen. mainModel
+	// travels by value, so a styles *field* would leave the panes pointing at
+	// whichever copy happened to be current when they were built, and
+	// re-theming would never reach them.
+	styles := new(common.Styles)
+	*styles = common.MakeStyles()
 
 	initialPanel := FileTreePanel
 	if !cfg.UI.ShowFileTree {
@@ -137,13 +141,13 @@ func New(opts ModelOpts, cfg config.Config) mainModel {
 		watchEnabled:      cfg.Watch.Enabled,
 		watchCmd:          cfg.Watch.Cmd,
 		watchInterval:     cfg.Watch.Interval,
-		styles:            common.MakeStyles(),
+		styles:            styles,
 		lastTheme:         common.Themes.Current(),
 	}
-	m.fileTree = filetree.New(cfg, &m.styles)
+	m.fileTree = filetree.New(cfg, m.styles)
 	m.fileTree.SetSize(cfg.UI.FileTreeWidth, 0)
-	m.diffViewer = diffviewer.New(cfg.UI.SideBySide, &m.styles)
-	m.themePicker = themepicker.New(&m.styles)
+	m.diffViewer = diffviewer.New(cfg.UI.SideBySide, m.styles)
+	m.themePicker = themepicker.New(m.styles)
 	m.help = help.New()
 	m.help.SetKeys(KeyGroups())
 
@@ -206,6 +210,15 @@ func (m mainModel) fetchPRDiff() tea.Msg {
 
 type watchTickMsg struct{ time.Time }
 
+// appearanceTickMsg drives the poll that keeps an already-open diffnav in step
+// with the system appearance.
+type appearanceTickMsg struct{ time.Time }
+
+// appearanceInterval is how often the system appearance is re-checked while
+// the theme is following it. Each check spawns a short-lived process, so this
+// trades promptness against doing that too often.
+const appearanceInterval = 3 * time.Second
+
 type watchResultMsg struct {
 	output string
 	err    error
@@ -216,12 +229,21 @@ func (m mainModel) Init() tea.Cmd {
 	if m.watchEnabled {
 		cmds = append(cmds, m.scheduleWatchTick())
 	}
+	if m.followsAppearance() {
+		cmds = append(cmds, scheduleAppearanceTick())
+	}
 	if m.prURL != "" {
 		cmds = append(cmds, m.fetchPR, m.fetchPRDiff)
 	} else {
 		cmds = append(cmds, m.parseDiff)
 	}
 	return tea.Batch(cmds...)
+}
+
+func scheduleAppearanceTick() tea.Cmd {
+	return tea.Tick(appearanceInterval, func(t time.Time) tea.Msg {
+		return appearanceTickMsg{t}
+	})
 }
 
 func (m mainModel) scheduleWatchTick() tea.Cmd {
@@ -484,6 +506,18 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.diff = msg.diff
 		cmds = append(cmds, m.parseDiff)
 
+	case appearanceTickMsg:
+		// Re-theme only when the appearance has actually flipped, so the poll
+		// costs nothing but the check itself.
+		cmds = append(cmds, scheduleAppearanceTick())
+		want := common.ThemeForAppearance(m.config.UI.LightTheme, m.config.UI.DarkTheme)
+		if want != common.Themes.Current().ID {
+			if cmd := m.onThemeChanged(want); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		return m, tea.Batch(cmds...)
+
 	case watchTickMsg:
 		if m.watchInFlight {
 			return m, nil
@@ -549,10 +583,32 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+// resolveTheme picks the theme to start with. DIFFNAV_THEME overrides the
+// config, and "auto" defers to the system appearance.
+func resolveTheme(cfg config.Config) string {
+	theme := cfg.UI.Theme
+	if envTheme := os.Getenv("DIFFNAV_THEME"); envTheme != "" {
+		theme = envTheme
+	}
+	if theme == common.ThemeAuto {
+		return common.ThemeForAppearance(cfg.UI.LightTheme, cfg.UI.DarkTheme)
+	}
+	return theme
+}
+
+// followsAppearance reports whether the theme tracks the system rather than
+// being pinned to one.
+func (m mainModel) followsAppearance() bool {
+	if os.Getenv("DIFFNAV_THEME") != "" {
+		return false
+	}
+	return m.config.UI.Theme == common.ThemeAuto
+}
+
 func (m *mainModel) onThemeChanged(themeId string) tea.Cmd {
 	if ok := common.Themes.SetTintID(themeId); ok {
-		m.styles = common.MakeStyles()
-		m.fileTree.SetStyles(&m.styles)
+		*m.styles = common.MakeStyles()
+		m.fileTree.SetStyles(m.styles)
 		return m.diffViewer.UpdateTheme()
 	}
 	return nil
@@ -951,13 +1007,19 @@ func (m mainModel) viewHeader() string {
 }
 
 func (m mainModel) footerView() string {
-	base := lipgloss.NewStyle().Background(m.styles.Colors.DarkerSelectionBg)
+	// Give the footer an explicit foreground. Setting only a background left
+	// the text on the terminal's default colour, which has no relationship to
+	// the theme and goes unreadable as soon as the two disagree.
+	base := lipgloss.NewStyle().
+		Background(m.styles.Colors.DarkerSelectionBg).
+		Foreground(m.styles.Tint.Fg)
 	files := fmt.Sprintf(" %d files", len(m.files))
 	sep := base.Foreground(m.styles.Tint.BrightBlack).Render(" • ")
 	added, deleted := m.diffViewer.RootDiffStats()
 	help := zone.Mark(
 		zoneHelp,
 		base.Background(m.styles.Tint.BrightBlack).
+			Foreground(m.styles.Tint.Fg).
 			PaddingLeft(1).
 			PaddingRight(1).
 			Render("F1/? help"),

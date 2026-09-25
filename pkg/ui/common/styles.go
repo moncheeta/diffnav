@@ -26,20 +26,39 @@ type Colors struct {
 	FaintBlue         func() color.Color
 }
 
+// TowardBackground blends a colour towards a background by fraction t, where
+// 0 is the colour untouched and 1 is the background.
+//
+// Deriving chrome by darkening assumed a dark theme; lightening instead — the
+// obvious mirror — washes colours out to near-white, because it moves towards
+// white rather than towards the ground they will sit on. Blending towards the
+// background keeps the hue on both, and needs no case for either.
+func TowardBackground(c, bg color.Color, t float64) color.Color {
+	const steps = 101
+	i := int(t * float64(steps-1))
+	if i < 0 {
+		i = 0
+	}
+	if i > steps-1 {
+		i = steps - 1
+	}
+	return lipgloss.Blend1D(steps, c, bg)[i]
+}
+
 func MakeStyles() Styles {
 	t := Themes.Current()
 	if t.ID == tint.TintTokyoNightStorm.ID {
 		t.BrightGreen = tint.FromHex("#9ece6a")
 	}
 
-	selectionFg := lipgloss.Darken(t.Blue, 0.3)
-	selectionBg := lipgloss.Darken(t.Blue, 0.6)
+	selectionFg := TowardBackground(t.Blue, t.Bg, 0.3)
+	selectionBg := TowardBackground(t.Blue, t.Bg, 0.6)
 	colors := Colors{
 		SelectionFg:       selectionFg,
 		SelectionBg:       selectionBg,
-		DarkerSelectionBg: lipgloss.Darken(selectionBg, 0.3),
+		DarkerSelectionBg: TowardBackground(selectionBg, t.Bg, 0.3),
 		FaintBlue: func() color.Color {
-			return lipgloss.Darken(t.Blue, 0.8)
+			return TowardBackground(t.Blue, t.Bg, 0.8)
 		},
 	}
 
@@ -50,6 +69,9 @@ func MakeStyles() Styles {
 }
 
 var SupportedThemeToDeltaSyntax = map[string]string{
+	// Custom bat themes; build them with `bat cache --build`.
+	TintFlexokiLight.ID:               "flexoki-light",
+	TintFlexokiDark.ID:                "flexoki-dark",
 	tint.TintCatppuccinFrappe.ID:      "Catppuccin Frappe",
 	tint.TintCatppuccinMacchiato.ID:   "Catppuccin Macchiato",
 	tint.TintCatppuccinMocha.ID:       "Catppuccin Mocha",
@@ -74,6 +96,8 @@ var Themes *tint.Registry
 
 func RegisterSupportedTints() {
 	Themes = tint.NewRegistry(
+		TintFlexokiDark,
+		TintFlexokiLight,
 		tint.TintTokyoNight,
 		tint.TintCatppuccinFrappe,
 		tint.TintCatppuccinMacchiato,

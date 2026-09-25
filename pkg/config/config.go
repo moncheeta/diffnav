@@ -21,7 +21,9 @@ type UIConfig struct {
 	ShowDiffStats         bool   `yaml:"showDiffStats"`         // Show the amount of lines added / removed next to the file
 	SideBySide            bool   `yaml:"sideBySide"`            // Side-by-side diff view (default: true)
 	StartFoldersOpenDepth int    `yaml:"startFoldersOpenDepth"` // How many levels of folders to open on start (-1 = all, 0 = none)
-	Theme                 string `yaml:"theme"`                 // The theme to use (default: "tokyo_night")
+	Theme                 string `yaml:"theme"`                 // Theme id, or "auto" to follow the system appearance
+	LightTheme            string `yaml:"lightTheme"`            // Theme used when theme is "auto" and the system is light
+	DarkTheme             string `yaml:"darkTheme"`             // Theme used when theme is "auto" and the system is dark
 }
 
 type WatchConfig struct {
@@ -49,6 +51,8 @@ func DefaultConfig() Config {
 			ShowDiffStats:         true,
 			StartFoldersOpenDepth: -1,
 			Theme:                 tint.TintTokyoNight.ID,
+			LightTheme:            "flexoki_light",
+			DarkTheme:             "flexoki_dark",
 		},
 	}
 }

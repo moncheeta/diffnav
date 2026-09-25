@@ -2,6 +2,7 @@ package diffviewer
 
 import (
 	"fmt"
+	"image/color"
 	"os"
 	"os/exec"
 	"strings"
@@ -600,15 +601,19 @@ func (m *Model) makeDeltaArgs(sideBySide bool, width int, opts deltaOpts) []stri
 	theme := common.Themes.Current()
 	sSelection := lipgloss.NewStyle().Background(m.Styles.Colors.SelectionBg)
 	selectionColor := common.LipglossColorToHex(m.Styles.Colors.SelectionBg)
+	// The added/removed grounds are the accent blended towards the tint's own
+	// background, so they read as a tint of the page in either appearance.
+	shade := func(c color.Color, t float64) string {
+		return common.LipglossColorToHex(common.TowardBackground(c, theme.Bg, t))
+	}
+
 	white := common.LipglossColorToHex(theme.White)
-	green := common.LipglossColorToHex(lipgloss.Darken(theme.Green, 0.8))
-	brightGreen := common.LipglossColorToHex(
-		lipgloss.Darken(theme.BrightGreen, 0.5),
-	)
+	green := shade(theme.Green, 0.8)
+	brightGreen := shade(theme.BrightGreen, 0.5)
 	plusLine := common.LipglossColorToHex(theme.BrightGreen)
 	minusLine := common.LipglossColorToHex(theme.BrightRed)
-	red := common.LipglossColorToHex(lipgloss.Darken(theme.Red, 0.8))
-	brightRed := common.LipglossColorToHex(lipgloss.Darken(theme.BrightRed, 0.5))
+	red := shade(theme.Red, 0.8)
+	brightRed := shade(theme.BrightRed, 0.5)
 	args := []string{
 		"--paging=never",
 		"--line-numbers",
