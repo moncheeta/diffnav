@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -97,6 +99,8 @@ var ViewportKeyMap = viewport.KeyMap{
 
 type Model struct {
 	common.Common
+	textSel    selection
+	wordDrag   wordAnchor
 	fvp        *filterableviewport.Model[diffLine]
 	file       *cachedNode
 	dir        *cachedNode
@@ -240,6 +244,20 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 const scrollbarWidth = 2 // 1 scrollbar character + 1 padding
 
 func (m Model) View() string {
+	return m.textSel.apply(m.baseView(), m.selectionStyle())
+}
+
+// selectionStyle is how dragged text is highlighted: the accent as a ground
+// with the tint's own background as the text, so it reads as a solid block in
+// either appearance.
+func (m Model) selectionStyle() lipgloss.Style {
+	t := common.Themes.Current()
+	return lipgloss.NewStyle().Background(t.Blue).Foreground(t.Bg)
+}
+
+// baseView is the pane before any selection highlight. Selection coordinates
+// index into this, and copying reads from it.
+func (m Model) baseView() string {
 	vpView := m.fvp.View()
 	itemMetrics := m.fvp.GetItemMetrics()
 	scrollbar := m.sb.View(
@@ -252,6 +270,94 @@ func (m Model) View() string {
 		vpView = lipgloss.JoinHorizontal(lipgloss.Top, vpView, scrollbar)
 	}
 	return vpView
+}
+
+// BeginSelect starts a drag selection at a cell of the rendered pane.
+func (m *Model) BeginSelect(row, col int) {
+	at := point{row: row, col: col}
+	m.textSel = selection{active: true, anchor: at, head: at}
+	m.wordDrag = wordAnchor{}
+}
+
+// ExtendSelect moves the loose end of an in-progress drag.
+func (m *Model) ExtendSelect(row, col int) {
+	if !m.textSel.active {
+		return
+	}
+	m.textSel.head = point{row: row, col: col}
+}
+
+// SelectWordAt selects the word under a cell, reporting whether there was one.
+// Used for double-click.
+func (m *Model) SelectWordAt(row, col int) bool {
+	lines := strings.Split(m.baseView(), "\n")
+	if row < 0 || row >= len(lines) {
+		return false
+	}
+	from, to, ok := wordAt(ansi.Strip(lines[row]), col)
+	if !ok {
+		return false
+	}
+	m.textSel = selection{
+		active: true,
+		anchor: point{row: row, col: from},
+		head:   point{row: row, col: to},
+	}
+	m.wordDrag = wordAnchor{active: true, row: row, from: from, to: to}
+	return true
+}
+
+// ExtendSelectByWord moves the loose end of a drag that began with a
+// double-click, snapping to whole words so the word it began on stays intact.
+func (m *Model) ExtendSelectByWord(row, col int) {
+	if !m.wordDrag.active {
+		m.ExtendSelect(row, col)
+		return
+	}
+
+	headFrom, headTo := col, col
+	lines := strings.Split(m.baseView(), "\n")
+	if row >= 0 && row < len(lines) {
+		if from, to, ok := wordAt(ansi.Strip(lines[row]), col); ok {
+			headFrom, headTo = from, to
+		}
+	}
+
+	anchor := m.wordDrag
+	// Dragging back past the anchor word flips which end is fixed.
+	if (point{row: row, col: headFrom}).before(point{row: anchor.row, col: anchor.from}) {
+		m.textSel = selection{
+			active: true,
+			anchor: point{row: anchor.row, col: anchor.to},
+			head:   point{row: row, col: headFrom},
+		}
+		return
+	}
+	m.textSel = selection{
+		active: true,
+		anchor: point{row: anchor.row, col: anchor.from},
+		head:   point{row: row, col: headTo},
+	}
+}
+
+// SelectedText is the selected text, stripped of styling.
+func (m Model) SelectedText() string {
+	if m.textSel.empty() {
+		return ""
+	}
+	return m.textSel.extract(strings.Split(m.baseView(), "\n"))
+}
+
+// HasSelection reports whether any text is selected.
+func (m Model) HasSelection() bool {
+	return !m.textSel.empty()
+}
+
+// ClearSelection drops the selection. It is anchored to the screen, so
+// anything that moves the content calls this.
+func (m *Model) ClearSelection() {
+	m.textSel = selection{}
+	m.wordDrag = wordAnchor{}
 }
 
 func (m *Model) SetSize(width, height int) tea.Cmd {

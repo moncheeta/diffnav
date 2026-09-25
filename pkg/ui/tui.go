@@ -16,6 +16,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"charm.land/log/v2"
+	"github.com/atotto/clipboard"
 	"github.com/bluekeyes/go-gitdiff/gitdiff"
 	tint "github.com/lrstanley/bubbletint/v2"
 	zone "github.com/lrstanley/bubblezone/v2"
@@ -90,6 +91,11 @@ type mainModel struct {
 	filtered          []string
 	config            config.Config
 	draggingSidebar   bool
+	selectingText     bool
+	selectingWords    bool
+	lastClickAt       time.Time
+	lastClickX        int
+	lastClickY        int
 	iconStyle         string
 	sideBySide        bool
 	help              help.Model
@@ -285,6 +291,10 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
+		// The selection is anchored to the screen, so any key that might move
+		// the content underneath it drops it rather than leaving a stale
+		// highlight over different text.
+		m.diffViewer.ClearSelection()
 		if m.themePickerOpen && !key.Matches(msg, keys.Quit) && msg.Key().Code != tea.KeyEscape {
 			tCmd := m.themePicker.Update(msg)
 			cmds = append(cmds, tCmd)
@@ -1356,6 +1366,29 @@ func (m mainModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				m.messageOpen = false
 				return m, nil
 			}
+			// Drag in the diff to select text, tmux style. Two clicks on the
+			// same cell in quick succession select the word instead.
+			if zone.Get(zoneDiffViewer).InBounds(msg) {
+				x, y := zone.Get(zoneDiffViewer).Pos(msg)
+				now := time.Now()
+				isDouble := x == m.lastClickX && y == m.lastClickY &&
+					now.Sub(m.lastClickAt) < doubleClickWindow
+				if isDouble {
+					m.lastClickAt = time.Time{} // a third click starts over
+					if m.diffViewer.SelectWordAt(y, x) {
+						// Keep tracking: dragging on from here extends by word.
+						// The release copies either way.
+						m.selectingText = true
+						m.selectingWords = true
+						return m, nil
+					}
+				}
+				m.lastClickAt, m.lastClickX, m.lastClickY = now, x, y
+				m.diffViewer.BeginSelect(y, x)
+				m.selectingText = true
+				m.selectingWords = false
+				return m, nil
+			}
 			if zone.Get(zoneHeader).InBounds(msg) && m.preamble != "" {
 				m.messageOpen = !m.messageOpen
 				m.helpOpen = false
@@ -1369,14 +1402,49 @@ func (m mainModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseReleaseMsg:
 		m.draggingSidebar = false
+		if m.selectingText {
+			m.selectingText = false
+			m.selectingWords = false
+			if text := m.diffViewer.SelectedText(); text != "" {
+				return m, copySelection(text)
+			}
+			m.diffViewer.ClearSelection()
+		}
 
 	case tea.MouseMotionMsg:
 		if m.draggingSidebar {
 			return m.handleSidebarDrag(msg)
 		}
+		if m.selectingText {
+			x, y := zone.Get(zoneDiffViewer).Pos(msg)
+			if m.selectingWords {
+				m.diffViewer.ExtendSelectByWord(y, x)
+			} else {
+				m.diffViewer.ExtendSelect(y, x)
+			}
+			return m, nil
+		}
 	}
 
 	return m, nil
+}
+
+// doubleClickWindow is how close together two clicks on the same cell must
+// land to count as a double-click, which selects the word under them.
+const doubleClickWindow = 500 * time.Millisecond
+
+// copySelection puts the dragged text on the clipboard. Selecting copies
+// straight away, so there is no separate copy key.
+//
+// A failed write is logged rather than returned as common.ErrMsg, which is
+// fatal: losing a copy is no reason to take the pager down with it.
+func copySelection(text string) tea.Cmd {
+	return func() tea.Msg {
+		if err := clipboard.WriteAll(text); err != nil {
+			log.Error("could not copy selection to clipboard", "err", err)
+		}
+		return nil
+	}
 }
 
 func (m mainModel) handleSearchResultClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
@@ -1472,6 +1540,7 @@ func (m mainModel) handleScroll(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	// Check if scrolling in diff viewer.
 	if zone.Get(zoneDiffViewer).InBounds(msg) {
+		m.diffViewer.ClearSelection()
 		if msg.Mouse().Button == tea.MouseWheelUp {
 			m.diffViewer.ScrollUp(lines)
 		} else {
